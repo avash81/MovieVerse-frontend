@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+// Use REACT_APP_API_URL for Create React App; fallback to Render backend URL
+const API_URL = process.env.REACT_APP_API_URL || 'https://movieverse-backend-ewhk.onrender.com';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
