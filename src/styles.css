@@ -1259,4 +1259,76 @@ h1 {
   .footer-links a {
     font-size: 0.8rem;
   }
+  /* Quick View Modal */
+.quick-view-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: #000;
+  color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-width: 500px;
+  width: 90%;
+}
+
+.quick-view-modal button {
+  float: right;
+  background: none;
+  color: #e50914;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.quick-view-modal h2 {
+  font-size: 1.5rem;
+  margin-bottom: 10px;
+  color: #fff;
+}
+
+.quick-view-modal p {
+  font-size: 1rem;
+  margin: 5px 0;
+  color: #ccc;
+}
+
+.quick-view-modal p strong {
+  color: #fff;
+}
+
+/* Ensure trailer modal consistency */
+.trailer-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.trailer-modal-content {
+  position: relative;
+  width: 80%;
+  max-width: 800px;
+  aspect-ratio: 16 / 9;
+}
+
+.trailer-modal-close {
+  position: absolute;
+  top: -30px;
+  right: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
 }

@@ -1,9 +1,117 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Helmet } from 'react-helmet';
+import { Helmet } from 'react-helmet-async'; // Updated to react-helmet-async
 import LazyLoad from 'react-lazyload';
-import { getCategory, getNotices } from '../api/api';
+import { getCategory, getNotices, getReviews } from '../api/api';
 import '../styles.css';
+
+// Separate MovieCard component
+const MovieCard = ({ movie, categoryId, index, reviewCounts, watchlist, handleAddToWatchlist, handleRemoveFromWatchlist, openTrailerModal, openQuickView, handleImageError, trackClick }) => {
+  let genresString = 'N/A';
+  if (movie.genres) {
+    if (Array.isArray(movie.genres)) {
+      genresString = movie.genres
+        .map(genre => (typeof genre === 'object' && genre.name ? genre.name : genre))
+        .join(', ');
+    } else if (typeof movie.genres === 'string') {
+      genresString = movie.genres;
+    }
+  }
+
+  return (
+    <div key={`${categoryId}-${movie.source}-${movie.externalId}-${index}`} className="movie-card">
+      <div
+        className="movie-poster"
+        onClick={() => openTrailerModal(movie.trailer)}
+        role="button"
+        tabIndex={0}
+        onKeyPress={(e) => e.key === 'Enter' && openTrailerModal(movie.trailer)}
+        aria-label={`Play trailer for ${movie.title}`}
+      >
+        <LazyLoad height={300}>
+          <img
+            src={movie.poster}
+            alt={movie.title}
+            onError={(e) => handleImageError(e, movie.title)}
+          />
+        </LazyLoad>
+        <div className="movie-overlay">
+          <p>IMDb Rating: {movie.imdbRating || 'N/A'}</p>
+          <p>Total Number of Reviews: {reviewCounts[movie.externalId] || 0}</p>
+          <Link
+            to={`/movies/${movie.source}/${movie.externalId}`}
+            onClick={() => trackClick('view_details', movie.externalId, movie.title)}
+          >
+            <button
+              className="cta-button"
+              aria-label={`View details for ${movie.title}`}
+            >
+              View Details
+            </button>
+          </Link>
+          {movie.watchProviders?.US?.ads?.length > 0 && (
+            <div className="watch-free">
+              <h4>Watch for Free on:</h4>
+              <ul>
+                {movie.watchProviders.US.ads.map((provider, index) => (
+                  <li key={index}>{provider.provider_name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {movie.directLink && (
+            <a href={movie.directLink} target="_blank" rel="noopener noreferrer" className="watch-now" aria-label={`Watch ${movie.title} on Internet Archive`}>
+              Watch Now
+            </a>
+          )}
+          {watchlist.some((m) => m.externalId === movie.externalId && m.source === movie.source) ? (
+            <button
+              className="cta-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoveFromWatchlist(movie.externalId, movie.source);
+              }}
+              aria-label={`Remove ${movie.title} from watchlist`}
+            >
+              Remove from Watchlist
+            </button>
+          ) : (
+            <button
+              className="cta-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddToWatchlist(movie);
+              }}
+              aria-label={`Add ${movie.title} to watchlist`}
+            >
+              Add to Watchlist
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="movie-info" style={{ marginTop: '10px' }}>
+        <h3 style={{ margin: '0 0 5px 0' }}>{movie.title}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
+          <span style={{ color: '#666', fontSize: '14px', marginRight: '5px' }}>
+            {movie.releaseYear || 'N/A'}
+          </span>
+          <span style={{ color: '#666', fontSize: '12px', marginRight: '5px' }}>•</span>
+          <span style={{ color: '#666', fontSize: '14px' }}>
+            {genresString}
+          </span>
+        </div>
+        <button
+          className="quick-view-btn"
+          onClick={() => openQuickView(movie)}
+          style={{ color: '#1a73e8', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}
+          aria-label={`Quick view for ${movie.title}`}
+        >
+          Quick View
+        </button>
+      </div>
+    </div>
+  );
+};
 
 function Home() {
   const [categories] = useState([
@@ -35,58 +143,7 @@ function Home() {
   const [featuredMovie, setFeaturedMovie] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [quickViewMovie, setQuickViewMovie] = useState(null);
-  const [reactionCounts, setReactionCounts] = useState({});
-  const [userReactions, setUserReactions] = useState(JSON.parse(localStorage.getItem('userReactions')) || {});
-
-  // Generate or retrieve a temporary user ID
-  const userId = localStorage.getItem('tempUserId') || (() => {
-    const id = 'user_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('tempUserId', id);
-    return id;
-  })();
-
-  const handleReaction = async (externalId, reactionType) => {
-    try {
-      // Check if user has already reacted
-      if (userReactions[`${externalId}`]) {
-        console.log(`User ${userId} has already reacted to ${externalId}`);
-        return;
-      }
-
-      const response = await fetch(`/api/movies/reactions/tmdb/${externalId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reaction: reactionType, userId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Reaction error:', errorData.msg);
-        return;
-      }
-
-      const data = await response.json();
-      setReactionCounts(prev => ({
-        ...prev,
-        [externalId]: {
-          ...(prev[externalId] || {}),
-          ...data.reactionCounts,
-        },
-      }));
-
-      // Update local user reactions
-      const newUserReactions = {
-        ...userReactions,
-        [`${externalId}`]: reactionType,
-      };
-      setUserReactions(newUserReactions);
-      localStorage.setItem('userReactions', JSON.stringify(newUserReactions));
-
-      console.log(`Reaction ${reactionType} recorded for ${externalId} by user ${userId}`);
-    } catch (error) {
-      console.error('Reaction error:', error);
-    }
-  };
+  const [reviewCounts, setReviewCounts] = useState({});
 
   const trackClick = (action, movieId, movieTitle) => {
     console.log('Tracking click:', { action, movieId, movieTitle });
@@ -120,78 +177,89 @@ function Home() {
 
       const fetchWithTimeout = async (fn, ...args) => {
         const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timed out')), 5000)
+          setTimeout(() => reject(new Error('Request timed out after 15s')), 15000)
         );
         return Promise.race([fn(...args), timeout]);
       };
 
+      // Fetch notices
       try {
         const noticesResponse = await fetchWithTimeout(getNotices);
-        setNotices(Array.isArray(noticesResponse.data) ? noticesResponse.data : []);
         console.log('Notices Response:', noticesResponse);
+        setNotices(Array.isArray(noticesResponse.data) ? noticesResponse.data : []);
       } catch (err) {
         console.error('Error fetching notices:', err);
         setNotices([]);
+        hasError = true;
+        setError(`Error loading notices: ${err.message || 'Failed to load'}`);
       }
 
-      for (const category of categories) {
+      // Batch fetch categories with 404 handling
+      const categoryPromises = categories.map(async (category) => {
         try {
-          const response = await fetchWithTimeout(getCategory, category.id);
-          console.log(`Category ${category.id} Response:`, response);
-          const movies = Array.isArray(response.data) ? response.data : [];
-          newMoviesByCategory[category.id] = movies.filter(
+          const { data, error } = await fetchWithTimeout(getCategory, category.id);
+          console.log(`Category ${category.id} Response:`, { data, error });
+          if (error && error.includes('404')) {
+            console.warn(`Skipping category ${category.id} due to 404 Not Found`);
+            return { id: category.id, name: category.name, movies: [] };
+          }
+          if (error) throw new Error(error);
+          const movies = Array.isArray(data) ? data : [];
+          return { id: category.id, name: category.name, movies: movies.filter(
             (movie) =>
               movie.source &&
               movie.externalId &&
               movie.externalId !== 'undefined' &&
               typeof movie.source === 'string' &&
               typeof movie.externalId === 'string'
-          );
+          ) };
         } catch (err) {
           console.error(`Error fetching category ${category.id}:`, err);
-          newMoviesByCategory[category.id] = [];
           hasError = true;
-          setError((prev) =>
-            prev
-              ? `${prev} Error loading ${category.name}: Failed to load.`
-              : `Error loading ${category.name}: Failed to load.`
-          );
+          setError((prev) => (prev ? `${prev} Error loading ${category.name}: ${err.message || 'Failed to load'}.` : `Error loading ${category.name}: ${err.message || 'Failed to load'}.`));
+          return { id: category.id, name: category.name, movies: [] };
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      });
+
+      const categoryResults = await Promise.all(categoryPromises);
+      categoryResults.forEach(({ id, movies }) => {
+        newMoviesByCategory[id] = movies;
+      });
 
       setMoviesByCategory(newMoviesByCategory);
-      if (!hasError && !error) setError(null);
+
+      if (!hasError) setError(null);
 
       if (newMoviesByCategory['trending'] && newMoviesByCategory['trending'].length > 0) {
         const trendingMovies = newMoviesByCategory['trending'];
-        setFeaturedMovie(trendingMovies[Math.floor(Math.random() * trendingMovies.length)]);
+        const randomFeatured = trendingMovies[Math.floor(Math.random() * trendingMovies.length)];
+        setFeaturedMovie(randomFeatured);
+
+        const counts = {};
+        const reviewPromises = categoryResults.flatMap(({ movies }) =>
+          movies.map(async (movie) => {
+            try {
+              const reviewsResponse = await fetchWithTimeout(getReviews, movie.source, movie.externalId);
+              return { externalId: movie.externalId, count: Array.isArray(reviewsResponse.data) ? reviewsResponse.data.length : 0 };
+            } catch (err) {
+              console.error(`Error fetching reviews for ${movie.source}/${movie.externalId}:`, err);
+              return { externalId: movie.externalId, count: 0 };
+            }
+          })
+        );
+
+        const reviewResults = await Promise.all(reviewPromises);
+        reviewResults.forEach(({ externalId, count }) => {
+          counts[externalId] = count;
+        });
+        setReviewCounts(counts);
       }
 
       setLoading(false);
-      const counts = {};
-      for (const category of categories) {
-        const movies = newMoviesByCategory[category.id] || [];
-        for (const movie of movies) {
-          try {
-            const res = await fetch(`/api/movies/details/${movie.source}/${movie.externalId}`);
-            if (res.ok) {
-              counts[movie.externalId] = (await res.json()).reactionCounts || {};
-            } else {
-              console.warn(`Failed to fetch details for ${movie.source}/${movie.externalId}: ${res.status}`);
-              counts[movie.externalId] = { excellent: 0, good: 0, average: 0, sad: 0 };
-            }
-          } catch (err) {
-            console.error(`Error fetching details for ${movie.source}/${movie.externalId}:`, err);
-            counts[movie.externalId] = { excellent: 0, good: 0, average: 0, sad: 0 };
-          }
-        }
-      }
-      setReactionCounts(counts);
     };
 
     fetchData();
-  }, [categories, error]);
+  }, [categories]);
 
   const handleSearchChange = (e) => {
     const query = e.target.value;
@@ -203,7 +271,6 @@ function Home() {
         .slice(0, 20);
       setSearchSuggestions(results.slice(0, 5));
       setSearchResults(results);
-      // Scroll to search results immediately
       const searchResultsElement = document.getElementById('search-results');
       if (searchResultsElement) {
         searchResultsElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -279,145 +346,6 @@ function Home() {
     return categories;
   }, [activeCategory, searchQuery, categories]);
 
-  const renderMovieCard = (movie, categoryId, index) => {
-    let genresString = 'N/A';
-    if (movie.genres) {
-      if (Array.isArray(movie.genres)) {
-        genresString = movie.genres
-          .map(genre => (typeof genre === 'object' && genre.name ? genre.name : genre))
-          .join(', ');
-      } else if (typeof movie.genres === 'string') {
-        genresString = movie.genres;
-      }
-    }
-
-    return (
-      <div key={`${categoryId}-${movie.source}-${movie.externalId}-${index}`} className="movie-card">
-        <div
-          className="movie-poster"
-          onClick={() => openTrailerModal(movie.trailer)}
-          role="button"
-          tabIndex={0}
-          onKeyPress={(e) => e.key === 'Enter' && openTrailerModal(movie.trailer)}
-          aria-label={`Play trailer for ${movie.title}`}
-        >
-          <LazyLoad height={300}>
-            <img
-              src={movie.poster}
-              alt={movie.title}
-              onError={(e) => handleImageError(e, movie.title)}
-            />
-          </LazyLoad>
-          <div className="movie-overlay">
-            <p>IMDb Rating: {movie.imdbRating || 'N/A'}</p>
-            <Link
-              to={`/movies/${movie.source}/${movie.externalId}`}
-              onClick={() => trackClick('view_details', movie.externalId, movie.title)}
-            >
-              <button
-                className="cta-button"
-                aria-label={`View details for ${movie.title}`}
-              >
-                View Details
-              </button>
-            </Link>
-            {movie.watchProviders?.US?.ads?.length > 0 && (
-              <div className="watch-free">
-                <h4>Watch for Free on:</h4>
-                <ul>
-                  {movie.watchProviders.US.ads.map((provider, index) => (
-                    <li key={index}>{provider.provider_name}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {movie.directLink && (
-              <a href={movie.directLink} target="_blank" rel="noopener noreferrer" className="watch-now" aria-label={`Watch ${movie.title} on Internet Archive`}>
-                Watch Now
-              </a>
-            )}
-            {watchlist.some((m) => m.externalId === movie.externalId && m.source === movie.source) ? (
-              <button
-                className="cta-button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveFromWatchlist(movie.externalId, movie.source);
-                }}
-                aria-label={`Remove ${movie.title} from watchlist`}
-              >
-                Remove from Watchlist
-              </button>
-            ) : (
-              <button
-                className="cta-button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToWatchlist(movie);
-                }}
-                aria-label={`Add ${movie.title} to watchlist`}
-              >
-                Add to Watchlist
-              </button>
-            )}
-            <div className="reaction-buttons" style={{ 
-              display: 'flex', 
-              gap: '5px', 
-              marginTop: '10px',
-              flexWrap: 'wrap',
-              justifyContent: 'center'
-            }}>
-              {['excellent', 'good', 'average', 'sad'].map((reaction) => (
-                <button
-                  key={reaction}
-                  className="cta-button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleReaction(movie.externalId, reaction);
-                  }}
-                  disabled={!!userReactions[`${movie.externalId}`]}
-                  aria-label={`React with ${reaction} to ${movie.title}`}
-                  style={{
-                    fontSize: '12px',
-                    padding: '5px 8px',
-                    opacity: userReactions[`${movie.externalId}`] ? 0.6 : 1,
-                  }}
-                  title={userReactions[`${movie.externalId}`] ? `You reacted: ${userReactions[`${movie.externalId}`]}` : ''}
-                >
-                  {{
-                    excellent: 'Excellent 👍',
-                    good: 'Good 😊', 
-                    average: 'Average 😐',
-                    sad: 'Sad 😢'
-                  }[reaction]} ({reactionCounts[movie.externalId]?.[reaction] || 0})
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="movie-info" style={{ marginTop: '10px' }}>
-          <h3 style={{ margin: '0 0 5px 0' }}>{movie.title}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-            <span style={{ color: '#666', fontSize: '14px', marginRight: '5px' }}>
-              {movie.releaseYear || 'N/A'}
-            </span>
-            <span style={{ color: '#666', fontSize: '12px', marginRight: '5px' }}>•</span>
-            <span style={{ color: '#666', fontSize: '14px' }}>
-              {genresString}
-            </span>
-          </div>
-          <button
-            className="quick-view-btn"
-            onClick={() => openQuickView(movie)}
-            style={{ color: '#1a73e8', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}
-            aria-label={`Quick view for ${movie.title}`}
-          >
-            Quick View
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="home fade-in">
       <Helmet>
@@ -448,8 +376,8 @@ function Home() {
       )}
 
       {quickViewMovie && (
-        <div className="quick-view-modal" style={{ position: 'fixed', backgroundColor: 'black', color: 'white', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'black', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.3)', zIndex: 1000, maxWidth: '500px', width: '90%' }}>
-          <button onClick={closeQuickView} style={{ float: 'right', background: 'none', color: 'red', border: 'none', fontSize: '20px', cursor: 'pointer' }} aria-label="Close quick view">×</button>
+        <div className="quick-view-modal">
+          <button onClick={closeQuickView} aria-label="Close quick view">×</button>
           <h2>{quickViewMovie.title}</h2>
           <p><strong>Overview:</strong> {quickViewMovie.overview || 'No overview available.'}</p>
           <p><strong>Cast:</strong> {quickViewMovie.cast?.join(', ') || 'N/A'}</p>
@@ -575,28 +503,18 @@ function Home() {
       {error && <p className="error">{error}</p>}
 
       {featuredMovie && !loading && !error && (
-        <div className="hero-section" style={{ position: 'relative', height: '60vh', overflow: 'hidden' }}>
+        <div className="hero-section">
           <img
             src={featuredMovie.poster || 'https://placehold.co/3840x2160?text=4K+Poster'}
             alt={featuredMovie.title}
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              minWidth: '100%',
-              minHeight: '100%',
-              width: 'auto',
-              height: 'auto',
-              transform: 'translate(-50%, -50%)',
-              zIndex: 1,
-              objectFit: 'cover',
-            }}
             onError={(e) => { e.target.src = 'https://placehold.co/3840x2160?text=4K+Poster'; }}
           />
-          <div className="hero-overlay" style={{ position: 'relative', zIndex: 2, color: '#fff', textAlign: 'center', paddingTop: '20vh', background: 'rgba(0, 0, 0, 0.5)' }}>
+          <div className="hero-overlay">
             <div className="hero-content">
-              <h2 style={{ fontSize: '2.5em', marginBottom: '10px' }}>{featuredMovie.title}</h2>
-              <p style={{ fontSize: '1.2em', marginBottom: '20px' }}>{featuredMovie.imdbRating || 'N/A'}</p>
+              <h2>{featuredMovie.title}</h2>
+              <p>
+                IMDb Rating: {featuredMovie.imdbRating || 'N/A'} | Total Number of Reviews: {reviewCounts[featuredMovie.externalId] || 0}
+              </p>
               <div className="hero-buttons">
                 {featuredMovie.trailer && featuredMovie.trailer !== 'N/A' && (
                   <button
@@ -635,30 +553,6 @@ function Home() {
                     Add to Watchlist
                   </button>
                 )}
-                <div className="reaction-buttons" style={{ display: 'flex', gap: '5px', marginTop: '10px', justifyContent: 'center' }}>
-                  {['excellent', 'good', 'average', 'sad'].map((reaction) => (
-                    <button
-                      key={reaction}
-                      className="cta-button"
-                      onClick={() => handleReaction(featuredMovie.externalId, reaction)}
-                      disabled={!!userReactions[`${featuredMovie.externalId}`]}
-                      aria-label={`React with ${reaction} to ${featuredMovie.title}`}
-                      style={{
-                        fontSize: '12px',
-                        padding: '5px 8px',
-                        opacity: userReactions[`${featuredMovie.externalId}`] ? 0.6 : 1,
-                      }}
-                      title={userReactions[`${featuredMovie.externalId}`] ? `You reacted: ${userReactions[`${featuredMovie.externalId}`]}` : ''}
-                    >
-                      {{
-                        excellent: 'Excellent 👍',
-                        good: 'Good 😊',
-                        average: 'Average 😐',
-                        sad: 'Sad 😢'
-                      }[reaction]} ({reactionCounts[featuredMovie.externalId]?.[reaction] || 0})
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
@@ -689,7 +583,22 @@ function Home() {
         <div className="category-section" id="watchlist">
           <h2>My Watchlist</h2>
           <div className="movie-grid horizontal-scroll">
-            {watchlist.filter((movie) => movie.source && movie.externalId).map((movie, index) => renderMovieCard(movie, 'watchlist', index))}
+            {watchlist.filter((movie) => movie.source && movie.externalId).map((movie, index) => (
+              <MovieCard
+                key={`${movie.source}-${movie.externalId}-${index}`}
+                movie={movie}
+                categoryId="watchlist"
+                index={index}
+                reviewCounts={reviewCounts}
+                watchlist={watchlist}
+                handleAddToWatchlist={handleAddToWatchlist}
+                handleRemoveFromWatchlist={handleRemoveFromWatchlist}
+                openTrailerModal={openTrailerModal}
+                openQuickView={openQuickView}
+                handleImageError={handleImageError}
+                trackClick={trackClick}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -698,7 +607,22 @@ function Home() {
         <div className="category-section" id="recommendations">
           <h2>Recommended for You</h2>
           <div className="movie-grid horizontal-scroll">
-            {recommendations.filter((movie) => movie.source && movie.externalId).map((movie, index) => renderMovieCard(movie, 'recommendations', index))}
+            {recommendations.filter((movie) => movie.source && movie.externalId).map((movie, index) => (
+              <MovieCard
+                key={`${movie.source}-${movie.externalId}-${index}`}
+                movie={movie}
+                categoryId="recommendations"
+                index={index}
+                reviewCounts={reviewCounts}
+                watchlist={watchlist}
+                handleAddToWatchlist={handleAddToWatchlist}
+                handleRemoveFromWatchlist={handleRemoveFromWatchlist}
+                openTrailerModal={openTrailerModal}
+                openQuickView={openQuickView}
+                handleImageError={handleImageError}
+                trackClick={trackClick}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -707,7 +631,22 @@ function Home() {
         <div className="search-results" id="search-results">
           <h2>Search Results</h2>
           <div className="movie-grid horizontal-scroll">
-            {searchResults.filter((movie) => movie.source && movie.externalId).map((movie, index) => renderMovieCard(movie, 'search-results', index))}
+            {searchResults.filter((movie) => movie.source && movie.externalId).map((movie, index) => (
+              <MovieCard
+                key={`${movie.source}-${movie.externalId}-${index}`}
+                movie={movie}
+                categoryId="search-results"
+                index={index}
+                reviewCounts={reviewCounts}
+                watchlist={watchlist}
+                handleAddToWatchlist={handleAddToWatchlist}
+                handleRemoveFromWatchlist={handleRemoveFromWatchlist}
+                openTrailerModal={openTrailerModal}
+                openQuickView={openQuickView}
+                handleImageError={handleImageError}
+                trackClick={trackClick}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -727,7 +666,22 @@ function Home() {
                 )
                 .map((movie, index) => {
                   console.log('Rendering movie:', { title: movie.title, source: movie.source, externalId: movie.externalId });
-                  return renderMovieCard(movie, category.id, index);
+                  return (
+                    <MovieCard
+                      key={`${movie.source}-${movie.externalId}-${index}`}
+                      movie={movie}
+                      categoryId={category.id}
+                      index={index}
+                      reviewCounts={reviewCounts}
+                      watchlist={watchlist}
+                      handleAddToWatchlist={handleAddToWatchlist}
+                      handleRemoveFromWatchlist={handleRemoveFromWatchlist}
+                      openTrailerModal={openTrailerModal}
+                      openQuickView={openQuickView}
+                      handleImageError={handleImageError}
+                      trackClick={trackClick}
+                    />
+                  );
                 })}
             </div>
           ) : (

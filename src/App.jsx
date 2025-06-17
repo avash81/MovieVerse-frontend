@@ -1,20 +1,19 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import Home from './components/Home';
 import MovieDetails from './components/MovieDetails';
-import Login from './components/Login';
-import Register from './components/Register';
-import './styles.css';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/movies/:source/:externalId" element={<MovieDetails />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-      </Routes>
-    </Router>
+    <HelmetProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/movies/:source/:externalId" element={<MovieDetails />} />
+        </Routes>
+      </Router>
+    </HelmetProvider>
   );
 }
 
